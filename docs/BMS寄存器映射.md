@@ -135,7 +135,7 @@ async def confirm_is_battery(address: str) -> bool:
 | 项目 | 内容 |
 |------|------|
 | 设备名 | FDA90705 |
-| MAC 地址 | C0:46:E4:FF:8A:C6 |
+| MAC 地址 | XX:XX:XX:XX:XX:XX |
 | 电池类型 | 15 串磷酸铁锂 (LiFePO4) |
 | 额定电压 | 48V (15 × 3.2V) |
 | 满电电压 | ≈51.1V (15 × 3.41V) |
@@ -183,7 +183,7 @@ raw = manufacturer_data[company_id]
 ④ SoC = raw[sn_end+2:sn_end+4] → LE 16-bit × 0.1
 ```
 
-示例：`raw = 31373733394232...` → SN=`17739B24FA9A30705`, V=`0x13F7`=51.11V, SoC=`0x03E8`=100.0%
+示例：`raw = 31373733394232...` → SN=`XXXXXXXXXXXXXXXXX`, V=`0x13F7`=51.11V, SoC=`0x03E8`=100.0%
 
 ### 2. 连接 → 发现服务
 
@@ -351,7 +351,7 @@ while True:
 ASCII SN (不定长) + Voltage (2B LE) + SoC (2B LE) [+ 0x00 终止符]
 ```
 
-示例：`17739B24FA9A30705` (17 chars SN) + `F713` (0x13F7 LE = 5111 → 51.11V) + `E803` (0x03E8 LE = 1000 → 100.0%)
+示例：`XXXXXXXXXXXXXXXXX` (17 chars SN) + `F713` (0x13F7 LE = 5111 → 51.11V) + `E803` (0x03E8 LE = 1000 → 100.0%)
 
 ## 寄存器映射 (BMS 0x1000, 124 bytes)
 
@@ -438,7 +438,7 @@ E803 E803 C05D 0000 C05D 0000 0300 000F
 
 ## Python 读取脚本
 
-脚本位置：`C:\Users\wangyu\Desktop\ruoyi_ble.py`
+脚本位置：`<本地脚本路径>`
 
 ### 功能
 
@@ -449,7 +449,7 @@ E803 E803 C05D 0000 C05D 0000 0300 000F
 ### 使用方法
 
 ```bash
-python C:\Users\wangyu\Desktop\ruoyi_ble.py
+python <本地脚本路径>
 ```
 
 ### 数据解析函数

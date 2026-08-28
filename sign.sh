@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 KEY_ALIAS="blebattery-debug"
-KEY_PWD="${SIGN_KEY_PWD:-blebattery2025}"
+KEY_PWD="${SIGN_KEY_PWD:?请先 export SIGN_KEY_PWD=〈你的keystore密码〉}"
 P12="$ROOT/sign-tool/blebattery-debug.p12"
 JAR="$ROOT/sign-tool/hap-sign-tool.jar"
 CER="$ROOT/signing/blebattery-debug.cer"
