@@ -195,8 +195,15 @@ export class BatteryMonitor {
       this.session = null;
       old.disconnect();
     }
+    // 换设备: 旧电池的锁定数据必须清空, 避免张冠李戴
+    this.snapshot = emptySnapshot();
+    this.lastBms = null;
+    if (this.context !== null) {
+      Store.saveSnapshot(this.context, this.snapshot);
+    }
     this.nextConnectTs = 0;
     this.status.statusText = `已选择 ${name}`;
+    this.updateCards(true);
   }
 
   forgetDevice(): void {

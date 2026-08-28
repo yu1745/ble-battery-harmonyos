@@ -42,6 +42,7 @@ struct Index {
   @State cellWarnMv: number = 30;
   @State autoReconnect: boolean = true;
   @State selectedId: string = '';
+  private settingsLoaded: boolean = false;
   private timerId: number = -1;
   private monitor: BatteryMonitor = BatteryMonitor.getInstance();
 
@@ -74,6 +75,14 @@ struct Index {
     this.selectedId = this.monitor.getSelectedDeviceId();
     this.btOn = access.getState() === access.BluetoothState.STATE_ON;
     this.monitorOn = this.status.running;
+
+    // 监控启动后 context 可用, 补读设置与历史
+    const ctx = this.monitor.getContext();
+    if (ctx !== null && !this.settingsLoaded) {
+      this.settingsLoaded = true;
+      this.cellWarnMv = Store.getCellWarnThreshold(ctx);
+      this.autoReconnect = Store.getAutoReconnect(ctx);
+    }
 
     // 电芯列表
     const chips: CellChip[] = [];
@@ -117,8 +126,7 @@ struct Index {
       this.rawHex = this.snap.rawHex;
     }
 
-    const ctx = this.monitor.getContext();
-    if (ctx !== null && this.snap.updatedAt > 0) {
+    if (ctx !== null) {
       this.history = Store.getHistory(ctx).slice(-10).reverse();
     }
   }
