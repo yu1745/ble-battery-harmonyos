@@ -1,0 +1,12 @@
+{
+  "string": [
+    {
+      "name": "widget_display_name",
+      "value": "电池电量"
+    },
+    {
+      "name": "widget_desc",
+      "value": "BLE 电池 BMS 电量卡片"
+    }
+  ]
+}

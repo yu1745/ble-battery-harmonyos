@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "蓝牙电池BMS监控"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "蓝牙电池BMS监控"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "BLE电池管家"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "电池卡片"
+    },
+    {
+      "name": "reason_bluetooth",
+      "value": "扫描并连接蓝牙电池(BMS)以读取电量数据"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+/node_modules
+/oh_modules
+/.hvigor
+/entry/build
+/build
+/.idea
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/local.properties
+hvigor/hvigor-config.json5
+*.hap
+*.har
+*.log

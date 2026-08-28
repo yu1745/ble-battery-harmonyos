@@ -1,0 +1,10 @@
+// 复制为 hvigor-config.json5 供 DevEco Studio 使用 (IDE 自带 hvigor, 无需 file: 依赖)
+// 命令行构建时 build.sh 会自动生成带 file: 依赖的版本, 无需手动操作。
+{
+  "modelVersion": "5.1.0",
+  "dependencies": {},
+  "execution": {},
+  "logging": {},
+  "debugging": {},
+  "nodeOptions": {}
+}

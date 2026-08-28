@@ -1,0 +1,24 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "BLE BMS battery monitor"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "BLE BMS battery monitor"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "BLE BMS"
+    },
+    {
+      "name": "EntryFormAbility_desc",
+      "value": "Battery widget card"
+    },
+    {
+      "name": "reason_bluetooth",
+      "value": "Scan and connect the BLE battery (BMS) to read its data"
+    }
+  ]
+}

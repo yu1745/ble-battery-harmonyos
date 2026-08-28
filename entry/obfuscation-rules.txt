@@ -1,0 +1,2 @@
+# Obfuscation rules (release). Kept conservative.
+-enable-property-obfuscation
