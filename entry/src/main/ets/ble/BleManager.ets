@@ -296,7 +296,14 @@ export class GattSession {
           this.writeChar!.properties !== null &&
           this.writeChar!.properties.writeNoResponse === true;
         const writeType = useNoRsp ? ble.GattWriteType.WRITE_NO_RESPONSE : ble.GattWriteType.WRITE;
-        dev.writeCharacteristicValue(this.writeChar!, writeType);
+        dev.writeCharacteristicValue(this.writeChar!, writeType).catch((we: BusinessError) => {
+          clearTimeout(timer);
+          if (this.pending !== null && !this.pending.settled) {
+            this.pending.settled = true;
+            this.pending = null;
+          }
+          reject(new Error(`写入失败: ${we.message}`));
+        });
       } catch (e) {
         const be = e as BusinessError;
         clearTimeout(timer);
