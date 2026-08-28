@@ -3,6 +3,7 @@
 /.hvigor
 /entry/build
 /build
+/dist
 /.idea
 /.clang-format
 /.clang-tidy
@@ -10,6 +11,13 @@
 /.appanalyzer
 /local.properties
 hvigor/hvigor-config.json5
+signing/
+sign-tool/*.p12
+sign-tool/*.csr
+sign-tool/*.cer
+sign-tool/*.p7b
+sign-tool/*.pem
+sign-tool/hap-sign-tool.jar
 *.hap
 *.har
 *.log
