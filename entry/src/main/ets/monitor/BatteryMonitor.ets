@@ -22,7 +22,7 @@ import { BmsData } from '../ble/BmsTypes';
 const DOMAIN: number = 0xB100;
 const TAG: string = 'BleMonitor';
 
-const POLL_INTERVAL_MS = 5000;        // 连接后的完整读取间隔
+const POLL_INTERVAL_BACKGROUND_MS = 60000;  // 后台轮询间隔: 每分钟 1 次
 const RECONNECT_COOLDOWN_MS = 15000;  // 连接失败后的重试冷却
 const CARD_UPDATE_MIN_MS = 1000;      // 卡片更新节流
 const ADV_SAVE_MIN_MS = 30000;        // 广播数据落盘节流
@@ -72,6 +72,8 @@ export class BatteryMonitor {
   private lastAdvSaveTs: number = 0;
   private autoSelectDone: boolean = false;
   private userSelected: boolean = false;
+  private foreground: boolean = true;
+  private sleepWakers: Set<() => void> = new Set();
   private blacklist: Set<string> = new Set<string>();
 
   getContext(): Context | null {
@@ -243,7 +245,46 @@ export class BatteryMonitor {
 
   requestRefresh(): void {
     this.nextConnectTs = 0;
+    this.wakeSleep();
     this.updateCards(true);
+  }
+
+  /** 前台最高速轮询 / 后台每分钟 1 次; 切换时打断进行中的轮询睡眠 */
+  setForeground(on: boolean): void {
+    if (this.foreground === on) {
+      return;
+    }
+    this.foreground = on;
+    if (on) {
+      this.nextConnectTs = 0;
+      this.wakeSleep();
+    }
+  }
+
+  private wakeSleep(): void {
+    const list: (() => void)[] = [];
+    this.sleepWakers.forEach((w) => {
+      list.push(w);
+    });
+    for (let i = 0; i < list.length; i++) {
+      list[i]();
+    }
+  }
+
+  private sleepFor(ms: number): Promise<void> {
+    return new Promise<void>((resolve: (value: void | PromiseLike<void>) => void) => {
+      let done = false;
+      const finish = (): void => {
+        if (done) {
+          return;
+        }
+        done = true;
+        this.sleepWakers.delete(finish);
+        resolve();
+      };
+      this.sleepWakers.add(finish);
+      setTimeout(finish, ms);
+    });
   }
 
   // ────────────────────────────── 内部逻辑 ──────────────────────────────
@@ -435,7 +476,8 @@ export class BatteryMonitor {
         }
         failCount = 0;
         this.updateCards(true);
-        await delay(POLL_INTERVAL_MS);
+        // 前台: 零间隔背靠背最高速; 后台: 每分钟 1 次
+        await this.sleepFor(this.foreground ? 0 : POLL_INTERVAL_BACKGROUND_MS);
       } catch (e) {
         const be = e as Error;
         failCount++;

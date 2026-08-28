@@ -39,12 +39,14 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(DOMAIN, TAG, 'onForeground');
+    BatteryMonitor.getInstance().setForeground(true);
     BatteryMonitor.getInstance().setLowLatency(true);
     BatteryMonitor.getInstance().requestRefresh();
   }
 
   onBackground(): void {
     hilog.info(DOMAIN, TAG, 'onBackground');
+    BatteryMonitor.getInstance().setForeground(false);
     BatteryMonitor.getInstance().setLowLatency(false);
   }
 
