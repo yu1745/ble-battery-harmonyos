@@ -13,3 +13,5 @@ hvigor/hvigor-config.json5
 *.hap
 *.har
 *.log
+# AGC 签名文件 (个人调试证书, 不入库)
+signing/
