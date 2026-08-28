@@ -10,6 +10,7 @@ struct WidgetCard2x2 {
   @LocalStorageProp('name') name: string = 'FD…';
   @LocalStorageProp('stateText') stateText: string = '—';
   @LocalStorageProp('updatedAtText') updatedAtText: string = '--';
+  @LocalStorageProp('disconnected') disconnected: number = 0;
   @LocalStorageProp('locked') locked: number = 0;
 
   private socColor(): string {
@@ -43,7 +44,14 @@ struct WidgetCard2x2 {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
-        if (this.locked === 1) {
+        if (this.disconnected === 1) {
+          Text('断联')
+            .fontSize(9)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#E8564A')
+            .borderRadius(4)
+            .padding({ left: 3, right: 3, top: 1, bottom: 1 })
+        } else if (this.locked === 1) {
           Text('锁定')
             .fontSize(9)
             .fontColor('#FFFFFF')
@@ -103,12 +111,19 @@ struct WidgetCard2x2 {
       .layoutWeight(1)
 
       Row() {
-        Text(this.updatedAtText === '--' ? '尚未连接' : `${this.updatedAtText} 更新`)
-          .fontSize(11)
-          .fontColor($r('sys.color.font_tertiary'))
-          .maxLines(1)
-          .layoutWeight(1)
-        if (this.stateText !== '—') {
+        if (this.disconnected === 1) {
+          Text('断联')
+            .fontSize(11)
+            .fontColor('#E8564A')
+            .layoutWeight(1)
+        } else {
+          Text(this.updatedAtText === '尚未连接' ? '尚未连接' : this.updatedAtText)
+            .fontSize(11)
+            .fontColor($r('sys.color.font_tertiary'))
+            .maxLines(1)
+            .layoutWeight(1)
+        }
+        if (this.disconnected !== 1 && this.stateText !== '—') {
           Text(this.stateText)
             .fontSize(11)
             .fontColor($r('sys.color.font_tertiary'))

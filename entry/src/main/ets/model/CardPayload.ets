@@ -1,6 +1,12 @@
 /**
  * 卡片数据构建 — BatteryMonitor 与 EntryFormAbility 共用。
  * 仅含 string/number 基础类型 (formBindingData 要求)。
+ *
+ * 时间显示规则:
+ *   <1 分钟   → "刚刚更新"
+ *   <1 小时   → "N分钟前更新"
+ *   <24 小时  → "N小时M分钟前更新"
+ *   ≥24 小时  → 不显示时间, disconnected=1, 卡片显示"断联"
  */
 import { BatterySnapshot, emptySnapshot } from './BatterySnapshot';
 
@@ -15,15 +21,27 @@ export class CardPayload {
     const now = Date.now();
     const locked = s.updatedAt > 0 && (now - s.updatedAt) > 10 * 60 * 1000;
     const socRounded = Math.round(s.soc);
-    let updatedAtText = '--';
+
+    // 相对时间
+    let updatedAtText = '尚未连接';
+    let disconnected = 0;
     if (s.updatedAt > 0) {
-      const d = new Date(s.updatedAt);
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const dd = String(d.getDate()).padStart(2, '0');
-      const hh = String(d.getHours()).padStart(2, '0');
-      const mi = String(d.getMinutes()).padStart(2, '0');
-      updatedAtText = `${mm}-${dd} ${hh}:${mi}`;
+      const ageMs = now - s.updatedAt;
+      const minTotal = Math.floor(ageMs / 60000);
+      if (ageMs >= 24 * 60 * 60 * 1000) {
+        disconnected = 1;
+        updatedAtText = '';
+      } else if (minTotal < 1) {
+        updatedAtText = '刚刚更新';
+      } else if (minTotal < 60) {
+        updatedAtText = `${minTotal}分钟前更新`;
+      } else {
+        const h = Math.floor(minTotal / 60);
+        const m = minTotal % 60;
+        updatedAtText = m > 0 ? `${h}小时${m}分钟前更新` : `${h}小时前更新`;
+      }
     }
+
     let stateText = '—';
     if (s.chargeState === 1) {
       stateText = '充电中';
@@ -41,6 +59,7 @@ export class CardPayload {
       'sn': s.sn,
       'stateText': stateText,
       'updatedAtText': updatedAtText,
+      'disconnected': disconnected,
       'locked': locked ? 1 : 0,
       'cycles': s.cycles,
       'tempText': s.full ? `${s.tempMin.toFixed(0)}~${s.tempMax.toFixed(0)}°C` : '',

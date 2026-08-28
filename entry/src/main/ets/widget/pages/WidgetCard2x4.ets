@@ -10,6 +10,7 @@ struct WidgetCard2x4 {
   @LocalStorageProp('name') name: string = 'FD…';
   @LocalStorageProp('stateText') stateText: string = '—';
   @LocalStorageProp('updatedAtText') updatedAtText: string = '--';
+  @LocalStorageProp('disconnected') disconnected: number = 0;
   @LocalStorageProp('locked') locked: number = 0;
   @LocalStorageProp('cycles') cycles: number = 0;
   @LocalStorageProp('tempText') tempText: string = '';
@@ -72,7 +73,14 @@ struct WidgetCard2x4 {
             .borderRadius(6)
             .padding({ left: 5, right: 5, top: 1, bottom: 1 })
         }
-        if (this.locked === 1) {
+        if (this.disconnected === 1) {
+          Text('断联')
+            .fontSize(10)
+            .fontColor('#FFFFFF')
+            .backgroundColor('#E8564A')
+            .borderRadius(6)
+            .padding({ left: 5, right: 5, top: 1, bottom: 1 })
+        } else if (this.locked === 1) {
           Text('锁定')
             .fontSize(10)
             .fontColor('#FFFFFF')
@@ -132,9 +140,10 @@ struct WidgetCard2x4 {
           .layoutWeight(1)
 
           Column({ space: 4 }) {
-            Text(this.updatedAtText === '--' ? '尚未连接' : `${this.updatedAtText}`)
+            Text(this.disconnected === 1 ? '断联' :
+              (this.updatedAtText === '--' || this.updatedAtText === '尚未连接' ? '尚未连接' : this.updatedAtText))
               .fontSize(11)
-              .fontColor($r('sys.color.font_tertiary'))
+              .fontColor(this.disconnected === 1 ? '#E8564A' : $r('sys.color.font_tertiary'))
             if (this.capacityText !== '') {
               Text(this.capacityText)
                 .fontSize(11)
