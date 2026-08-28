@@ -66,10 +66,13 @@ export class BatteryMonitor {
   private status: MonitorStatus = new MonitorStatus();
   private running: boolean = false;
   private nextConnectTs: number = 0;
+  private nextScanRetryTs: number = 0;
   private lastCardKey: string = '';
   private lastCardUpdateTs: number = 0;
   private lastAdvSaveTs: number = 0;
   private autoSelectDone: boolean = false;
+  private userSelected: boolean = false;
+  private blacklist: Set<string> = new Set<string>();
 
   getContext(): Context | null {
     return this.context;
@@ -187,6 +190,7 @@ export class BatteryMonitor {
     this.selectedId = deviceId;
     this.selectedName = name;
     this.autoSelectDone = true;
+    this.userSelected = true;
     if (this.context !== null) {
       Store.setSelectedDevice(this.context, deviceId, name);
     }
@@ -210,6 +214,7 @@ export class BatteryMonitor {
     this.selectedId = '';
     this.selectedName = '';
     this.autoSelectDone = false;
+    this.userSelected = false;
     if (this.context !== null) {
       Store.setSelectedDevice(this.context, '', '');
     }
@@ -256,11 +261,12 @@ export class BatteryMonitor {
           Store.setSelectedDevice(this.context, d.deviceId, d.name);
         }
       }
-    } else if (!this.autoSelectDone) {
+    } else if (!this.autoSelectDone && !this.blacklist.has(d.deviceId)) {
       target = true;
       this.selectedId = d.deviceId;
       this.selectedName = d.name;
       this.autoSelectDone = true;
+      this.userSelected = false;
       if (this.context !== null) {
         Store.setSelectedDevice(this.context, d.deviceId, d.name);
       }
@@ -326,9 +332,16 @@ export class BatteryMonitor {
 
   private async tick(): Promise<void> {
     if (!this.scanner.isScanning()) {
+      const now = Date.now();
+      if (now < this.nextScanRetryTs) {
+        return;
+      }
+      this.nextScanRetryTs = now + 10000; // 失败后 10s 再试, 不硬撞
       try {
         await this.scanner.start();
       } catch (e) {
+        const be = e as Error;
+        this.status.statusText = be.message;
         return;
       }
     }
@@ -354,11 +367,19 @@ export class BatteryMonitor {
       this.status.statusText = '信号丢失 · 电量已锁定';
       return;
     }
+    if (this.blacklist.has(target.deviceId) && !this.userSelected) {
+      return;
+    }
     await this.connectAndPoll(target.deviceId, target.name);
   }
 
   private async connectAndPoll(deviceId: string, name: string): Promise<void> {
     this.status.statusText = `正在连接 ${name}…`;
+    // 关键: 扫描与 GATT 服务发现并发会导致发现失败(2900099), 连接前先暂停扫描
+    const wasScanning = this.scanner.isScanning();
+    if (wasScanning) {
+      await this.scanner.stop();
+    }
     const session = new GattSession(deviceId);
     try {
       await session.connect(12000);
@@ -366,6 +387,23 @@ export class BatteryMonitor {
       const be = e as Error;
       hilog.warn(DOMAIN, TAG, 'connect fail: %{public}s', be.message);
       session.disconnect();
+      if (wasScanning && this.running) {
+        try {
+          await this.scanner.start();
+        } catch (e2) {
+        }
+      }
+      // 自动选择的设备若不含 NUS (不是目标电池), 拉黑并释放自动选择, 让下一个候选进来
+      if (!this.userSelected && be.message.includes('Nordic UART')) {
+        this.blacklist.add(deviceId);
+        this.selectedId = '';
+        this.selectedName = '';
+        this.autoSelectDone = false;
+        if (this.context !== null) {
+          Store.setSelectedDevice(this.context, '', '');
+        }
+        hilog.warn(DOMAIN, TAG, 'blacklist %{public}s', deviceId);
+      }
       this.nextConnectTs = Date.now() + RECONNECT_COOLDOWN_MS;
       if (this.running) {
         this.status.statusText = '连接失败 · 将自动重试';
@@ -413,6 +451,12 @@ export class BatteryMonitor {
       this.session = null;
     }
     session.disconnect();
+    if (this.running && wasScanning) {
+      try {
+        await this.scanner.start();
+      } catch (e) {
+      }
+    }
     this.nextConnectTs = Date.now() + RECONNECT_COOLDOWN_MS;
     if (this.running) {
       this.status.statusText = '连接断开 · 电量已锁定';

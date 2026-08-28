@@ -54,10 +54,16 @@ export class GattSession {
   private notificationsStarted: boolean = false;
   private pending: PendingCommand | null = null;
   private queue: Promise<void> = Promise.resolve();
+  private lastCmd: string = '';
+  private lastRespText: string = '';
+  private lastRespTs: number = 0;
+  private txCnt: number = 0;
   public connected: boolean = false;
 
   constructor(deviceId: string) {
     this.deviceId = deviceId;
+    this.lastRespText = '';
+    this.lastRespTs = 0;
   }
 
   is_connected(): boolean {
@@ -116,21 +122,53 @@ export class GattSession {
       }
     });
 
-    // MTU = 247 (尽力而为)
-    try {
-      dev.setBLEMtuSize(247);
-    } catch (e) {
-      const be = e as BusinessError;
-      hilog.warn(DOMAIN, TAG, 'setBLEMtuSize err %{public}d', be.code);
-    }
+    // 注意: 此处不主动请求 MTU — MTU 交换(getServices 前调用)在部分设备上会悬挂,
+    // 导致后续所有 getServices 报 2900099 (参考华为开发者 FAQ); 协议响应分片到达, 默认 MTU 即可。
 
-    // 服务发现 + 找 NUS 特征值
-    const services: Array<ble.GattService> = await dev.getServices();
+    // 断连事件
+    dev.on('BLEConnectionStateChange', (state: ble.BLEConnectionChangeState) => {
+      if (state.deviceId === this.deviceId &&
+        (state.state === constant.ProfileConnectionState.STATE_DISCONNECTED ||
+          state.state === constant.ProfileConnectionState.STATE_DISCONNECTING)) {
+        this.connected = false;
+        this.failPending(new Error('设备断开连接'));
+      }
+    });
+
+    // 通知回调
+    dev.on('BLECharacteristicChange', (charData: ble.BLECharacteristic) => {
+      this.onNotify(charData);
+    });
+
+    // 服务发现 + 找 NUS 特征值 (部分固件连接后服务发现需延迟, 多试几次; 单次异常也继续重试)
+    let services: Array<ble.GattService> = [];
     let found = false;
-    for (let i = 0; i < services.length; i++) {
-      const svc = services[i];
-      if (svc.serviceUuid.toLowerCase() !== UART_SERVICE_UUID) {
+    let lastErr = '';
+    for (let attempt = 0; attempt < 8 && !found; attempt++) {
+      if (attempt > 0) {
+        await delay(500);
+      }
+      try {
+        services = await dev.getServices();
+      } catch (e) {
+        const be = e as BusinessError;
+        lastErr = `${be.code}: ${be.message}`;
+        hilog.warn(DOMAIN, TAG, 'getServices attempt %{public}d err %{public}s', attempt, lastErr);
+        services = [];
         continue;
+      }
+      for (let i = 0; i < services.length; i++) {
+        if (services[i].serviceUuid.toLowerCase() === UART_SERVICE_UUID) {
+          found = true;
+          break;
+        }
+      }
+    }
+    if (found) {
+      const svc = services.find((s: ble.GattService): boolean =>
+        s.serviceUuid.toLowerCase() === UART_SERVICE_UUID);
+      if (svc === undefined) {
+        throw new Error('未找到 Nordic UART Service');
       }
       for (let j = 0; j < svc.characteristics.length; j++) {
         const ch = svc.characteristics[j];
@@ -142,13 +180,20 @@ export class GattSession {
         }
       }
       found = this.writeChar !== null && this.notifyChar !== null;
-      if (found) {
-        break;
-      }
     }
     if (!found || this.writeChar === null || this.notifyChar === null) {
+      let dump = '';
+      for (let i = 0; i < services.length; i++) {
+        dump += services[i].serviceUuid + ' ';
+      }
+      hilog.error(DOMAIN, TAG, 'GATT services(%{public}d): %{public}s lastErr=%{public}s', services.length, dump, lastErr);
+      if (services.length === 0 && lastErr !== '') {
+        throw new Error(`服务发现失败(${lastErr})`);
+      }
       throw new Error('未找到 Nordic UART Service');
     }
+
+    // MTU = 247 已在服务发现前尝试过; 此处不再重复
 
     // 断连事件
     dev.on('BLEConnectionStateChange', (state: ble.BLEConnectionChangeState) => {
@@ -168,6 +213,19 @@ export class GattSession {
     await dev.setCharacteristicChangeNotification(this.notifyChar, true);
     this.notificationsStarted = true;
     await delay(300);
+
+    // MTU 247: 必须在服务发现之后请求 (与 getServices 并发会 2900099)。
+    // 原版 Web BLE / bleak 均在 MTU 247 下工作: 单条通知可装下整个 F403 响应,
+    // 避免 MTU 23 分片下固件双发响应的问题。
+    try {
+      dev.on('BLEMtuChange', (mtu: number) => {
+        hilog.info(DOMAIN, TAG, 'MTU negotiated: %{public}d', mtu);
+      });
+      dev.setBLEMtuSize(247);
+    } catch (e) {
+      const be = e as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'setBLEMtuSize err %{public}d', be.code);
+    }
   }
 
   disconnect(): void {
@@ -236,7 +294,28 @@ export class GattSession {
     }
     p.settled = true;
     clearTimeout(p.timer);
-    p.resolve(p.buffer.slice(0, 10 + bc * 2));
+    const frame = p.buffer.slice(0, 10 + bc * 2);
+    // 重复响应抑制: 设备偶发把同一响应连发两遍, 400ms 内完全相同的帧视为重复副本, 丢弃等待真实响应
+    const now = Date.now();
+    if (frame === this.lastRespText && now - this.lastRespTs < 400) {
+      hilog.warn(DOMAIN, TAG, 'dup resp dropped');
+      p.settled = false;
+      p.buffer = '';
+      // 重新挂超时, 等待真实响应 (超时后 reject 由外层处理)
+      p.timer = setTimeout(() => {
+        if (this.pending !== null && !this.pending.settled) {
+          this.pending.settled = true;
+          const buf = this.pending.buffer;
+          this.pending = null;
+          p.reject(new Error(`接收超时 buf=${buf}`));
+        }
+      }, 1000);
+      return;
+    }
+    this.lastRespText = frame;
+    this.lastRespTs = now;
+    hilog.info(DOMAIN, TAG, 'tx#%{public}d cmd=%{public}s resp=%{public}s', this.txCnt, this.lastCmd, frame);
+    p.resolve(frame);
     this.pending = null;
   }
 
@@ -252,6 +331,8 @@ export class GattSession {
     this.queue = queued.then((): void => {
     }, (): void => {
     });
+    // 命令间限速, 给设备发送尾部通知留出时间
+    await delay(120);
     return queued;
   }
 
@@ -283,6 +364,8 @@ export class GattSession {
         timer: timer,
         settled: false
       };
+      this.lastCmd = cmd;
+      this.txCnt++; // 发送计数: 证明同一命令只写一次
 
       try {
         const cmdLen = cmd.length;
@@ -373,9 +456,31 @@ export class BleScanner {
   private devices: Map<string, DiscoveredDevice> = new Map();
   public onDevice: ((d: DiscoveredDevice) => void) | null = null;
   public lowLatency: boolean = true;
+  private lastOkStrategy: number = -1;
+  public lastError: string = '';
 
   isScanning(): boolean {
     return this.scanning;
+  }
+
+  /** 过滤策略逐个降级尝试: 新固件拒绝空数组, 只能带过滤条件 */
+  private buildStrategies(): ble.ScanFilter[][] {
+    const emptyFilter: ble.ScanFilter = {};
+    const nusFilter: ble.ScanFilter = { serviceUuid: UART_SERVICE_UUID };
+    const strategies: ble.ScanFilter[][] = [];
+    if (this.lastOkStrategy >= 0 && this.lastOkStrategy < 3) {
+      // 命中过的策略优先复用
+      if (this.lastOkStrategy === 0) {
+        strategies.push([], [emptyFilter], [nusFilter]);
+      } else if (this.lastOkStrategy === 1) {
+        strategies.push([emptyFilter], [], [nusFilter]);
+      } else {
+        strategies.push([nusFilter], [emptyFilter], []);
+      }
+    } else {
+      strategies.push([], [emptyFilter], [nusFilter]);
+    }
+    return strategies;
   }
 
   async start(): Promise<void> {
@@ -393,15 +498,24 @@ export class BleScanner {
       dutyMode: this.lowLatency ? ble.ScanDuty.SCAN_MODE_LOW_LATENCY : ble.ScanDuty.SCAN_MODE_BALANCED,
       matchMode: ble.MatchMode.MATCH_MODE_AGGRESSIVE
     };
-    try {
-      await this.scanner.startScan([], options);
-      this.scanning = true;
-      hilog.info(DOMAIN, TAG, 'scan started');
-    } catch (e) {
-      const be = e as BusinessError;
-      hilog.error(DOMAIN, TAG, 'startScan err %{public}d %{public}s', be.code, be.message);
-      throw new Error(`启动扫描失败: ${be.message}`);
+    const strategies = this.buildStrategies();
+    let lastBe = '';
+    for (let i = 0; i < strategies.length; i++) {
+      try {
+        await this.scanner.startScan(strategies[i], options);
+        this.scanning = true;
+        this.lastOkStrategy = i;
+        hilog.info(DOMAIN, TAG, 'scan started (strategy %{public}d)', i);
+        return;
+      } catch (e) {
+        const be = e as BusinessError;
+        lastBe = `${be.code}: ${be.message}`;
+        hilog.warn(DOMAIN, TAG, 'startScan strategy %{public}d err %{public}s', i, lastBe);
+      }
     }
+    this.lastError = lastBe;
+    hilog.error(DOMAIN, TAG, 'startScan all strategies failed: %{public}s', lastBe);
+    throw new Error(`启动扫描失败: ${lastBe}`);
   }
 
   async stop(): Promise<void> {
@@ -445,6 +559,10 @@ export class BleScanner {
         rssi: r.rssi,
         adv: adv
       };
+      if (!this.devices.has(r.deviceId)) {
+        hilog.info(DOMAIN, TAG, 'FD device: %{public}s rssi=%{public}d soc=%{public}s v=%{public}s',
+          name, r.rssi, adv !== null ? adv.soc.toFixed(1) : '-', adv !== null ? adv.voltage.toFixed(2) : '-');
+      }
       this.devices.set(r.deviceId, dev);
       if (this.onDevice !== null) {
         this.onDevice(dev);

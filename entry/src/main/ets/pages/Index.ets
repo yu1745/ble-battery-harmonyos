@@ -419,11 +419,10 @@ struct Index {
                     }
                     .height(12)
                   }
-                  .width('19%')
-                  .margin(2)
-                  .padding(4)
+                  .width('19.9%')
+                  .padding({ left: 2, right: 2, top: 4, bottom: 4 })
                   .borderRadius(8)
-                  .backgroundColor(c.isWarn ? '#33E8564A' : $r('sys.color.background_primary'))
+                  .backgroundColor(c.isWarn ? '#33E8564A' : $r('sys.color.background_secondary'))
                 }, (c: CellChip) => `${c.index}-${c.mv}-${c.isWarn}`)
               }
               .width('100%')
